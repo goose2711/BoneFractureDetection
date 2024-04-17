@@ -25,6 +25,7 @@
         <activity android:name=".LogInActivity" />
         <activity android:name=".SignUpActivity" />
         <activity android:name=".HomeActivity" />
+        <activity android:name=".TestMLActivity" />
     </application>
 
 </manifest>

@@ -42,7 +42,7 @@ public class LogInActivity extends AppCompatActivity {
                     if (checkLogin(username, password)) {
                         // Login successful
                         Toast.makeText(LogInActivity.this, "Login successful!", Toast.LENGTH_SHORT).show();
-                        startActivity(new Intent(LogInActivity.this, HomeActivity.class));
+                        startActivity(new Intent(LogInActivity.this, TestMLActivity.class));
                         finish();
                     } else {
                         // Login failed
