@@ -6,11 +6,13 @@ import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Base64;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -21,9 +23,9 @@ import com.example.myapplication.ml.Resnet50HandFrac;
 import com.example.myapplication.ml.Resnet50ShoulderFrac;
 
 import org.tensorflow.lite.DataType;
-import org.tensorflow.lite.Interpreter;
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
+import java.io.ByteArrayOutputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -68,6 +70,46 @@ public class TestMLActivity extends AppCompatActivity {
                     }
                 }
             });
+
+    //The below methods are to save the instance state of the image that the user selects. These methods are called
+    // so that when the orientation changes or the user changes the app, the image and predicted text are not lost.
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        // Save the bitmap of the image if it's not null
+        if (imgBitmap != null) {
+            String imgBitmapBase64 = bitmapToBase64(imgBitmap);
+            outState.putString("image_bitmap", imgBitmapBase64);
+        }
+        // Save text view content
+        outState.putString("result_text", textViewResult.getText().toString());
+    }
+
+    @Override
+    protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        // Restore the bitmap if available
+        if (savedInstanceState.containsKey("image_bitmap")) {
+            imgBitmap = base64ToBitmap(savedInstanceState.getString("image_bitmap"));
+            imageView.setImageBitmap(imgBitmap);
+        }
+        // Restore text view content
+        textViewResult.setText(savedInstanceState.getString("result_text"));
+    }
+
+    // Functions for converting a Bitmap object to a Base64 encoded string and vice versa to store in Bundle
+    private String bitmapToBase64(Bitmap bitmap) {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream);
+        byte[] byteArray = byteArrayOutputStream.toByteArray();
+        return Base64.encodeToString(byteArray, Base64.DEFAULT);
+    }
+
+    private Bitmap base64ToBitmap(String encodedImage) {
+        byte[] decodedString = Base64.decode(encodedImage, Base64.DEFAULT);
+        return BitmapFactory.decodeByteArray(decodedString, 0, decodedString.length);
+    }
+
 
     private void processImage(Bitmap bitmap) {
         try {
