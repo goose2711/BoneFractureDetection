@@ -1,5 +1,5 @@
+//All Body Parts Work in this version in this version
 package com.example.myapplication;
-
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
@@ -15,9 +15,13 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 
+import com.example.myapplication.ml.Resnet50Bodyparts;
 import com.example.myapplication.ml.Resnet50ElbowFrac;
+import com.example.myapplication.ml.Resnet50HandFrac;
+import com.example.myapplication.ml.Resnet50ShoulderFrac;
 
 import org.tensorflow.lite.DataType;
+import org.tensorflow.lite.Interpreter;
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer;
 
 import java.io.FileNotFoundException;
@@ -67,41 +71,71 @@ public class TestMLActivity extends AppCompatActivity {
 
     private void processImage(Bitmap bitmap) {
         try {
-            Resnet50ElbowFrac model = Resnet50ElbowFrac.newInstance(getApplicationContext());
+            // Models instances
+            Resnet50Bodyparts modelParts = Resnet50Bodyparts.newInstance(getApplicationContext());
+            Resnet50ElbowFrac modelElbow = Resnet50ElbowFrac.newInstance(getApplicationContext());
+            Resnet50HandFrac modelHand = Resnet50HandFrac.newInstance(getApplicationContext());
+            Resnet50ShoulderFrac modelShoulder = Resnet50ShoulderFrac.newInstance(getApplicationContext());
 
-            // Input size for the model
+            // Preparing input for the Body Parts model
             Bitmap resizedBitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, true);
-            ByteBuffer byteBuffer = convertBitmapToByteBuffer(resizedBitmap);
-
-            // Creates inputs for reference.
+            ByteBuffer byteBuffer = preprocessImageForResNet50(resizedBitmap);
             TensorBuffer inputFeature0 = TensorBuffer.createFixedSize(new int[]{1, 224, 224, 3}, DataType.FLOAT32);
             inputFeature0.loadBuffer(byteBuffer);
 
-            // Runs model inference and gets result.
-            Resnet50ElbowFrac.Outputs outputs = model.process(inputFeature0);
-            TensorBuffer outputFeature0 = outputs.getOutputFeature0AsTensorBuffer();
 
-            // Process and display the results accordingly
-            float[] confidences = outputFeature0.getFloatArray();
-            // Assuming the model outputs a probability distribution, find the class with maximum probability
-            float maxConfidence = 0;
-            int maxIndex = -1;
-            for (int i = 0; i < confidences.length; i++) {
-                if (confidences[i] > maxConfidence) {
-                    maxConfidence = confidences[i];
-                    maxIndex = i;
-                }
+            // Predicting body part
+            Resnet50Bodyparts.Outputs outputsParts = modelParts.process(inputFeature0);
+            TensorBuffer outputFeature0Parts = outputsParts.getOutputFeature0AsTensorBuffer();
+            float[] confidencesParts = outputFeature0Parts.getFloatArray();
+            int bodyPartIndex = getMaxIndex(confidencesParts);
+
+            String detectedPart;
+            String fractureType;
+
+            // Selecting the right model for fracture detection based on detected body part
+            if (bodyPartIndex == 0) {
+                detectedPart = "Elbow";
+                Resnet50ElbowFrac.Outputs outputsFracture = modelElbow.process(inputFeature0);
+                TensorBuffer outputFeature0Fracture = outputsFracture.getOutputFeature0AsTensorBuffer();
+                float[] confidencesFracture = outputFeature0Fracture.getFloatArray();
+                fractureType = (getMaxIndex(confidencesFracture) == 0) ? "Fractured" : "Normal";
+            } else if (bodyPartIndex == 1) {
+                detectedPart = "Hand";
+                Resnet50HandFrac.Outputs outputsFracture = modelHand.process(inputFeature0);
+                TensorBuffer outputFeature0Fracture = outputsFracture.getOutputFeature0AsTensorBuffer();
+                float[] confidencesFracture = outputFeature0Fracture.getFloatArray();
+                fractureType = (getMaxIndex(confidencesFracture) == 0) ? "Fractured" : "Normal";
+            } else {
+                detectedPart = "Shoulder";
+                Resnet50ShoulderFrac.Outputs outputsFracture = modelShoulder.process(inputFeature0);
+                TensorBuffer outputFeature0Fracture = outputsFracture.getOutputFeature0AsTensorBuffer();
+                float[] confidencesFracture = outputFeature0Fracture.getFloatArray();
+                fractureType = (getMaxIndex(confidencesFracture) == 0) ? "Fractured" : "Normal";
             }
-            String resultText = "Prediction Result Index: " + maxIndex + " Confidence: " + maxConfidence;
-            textViewResult.setText(resultText);
 
-            model.close();
+            // Displaying the result
+            String resultText = "Detected Body Part: " + detectedPart + "\nCondition: " + fractureType;
+            textViewResult.setText(resultText);
+            // Clean up
+            modelParts.close();
+            modelElbow.close();
+            modelHand.close();
+            modelShoulder.close();
         } catch (Exception e) {
             textViewResult.setText("Failed to process image: " + e.getMessage());
             e.printStackTrace();
-        }
-    }
+        }    }
 
+    private int getMaxIndex(float[] confidences) {
+        int maxIndex = 0;
+        for (int i = 1; i < confidences.length; i++) {
+            if (confidences[i] > confidences[maxIndex]) {
+                maxIndex = i;
+            }
+        }
+        return maxIndex;
+    }
     private ByteBuffer convertBitmapToByteBuffer(Bitmap bitmap) {
         ByteBuffer byteBuffer = ByteBuffer.allocateDirect(4 * 224 * 224 * 3);
         byteBuffer.order(ByteOrder.nativeOrder());
@@ -118,4 +152,29 @@ public class TestMLActivity extends AppCompatActivity {
         }
         return byteBuffer;
     }
+    private ByteBuffer preprocessImageForResNet50(Bitmap bitmap) {
+        final int BATCH_SIZE = 1;
+        final int PIXEL_SIZE = 3;
+        final int IMAGE_MEAN = 128;
+        final float IMAGE_STD = 128.0f;
+
+        ByteBuffer byteBuffer = ByteBuffer.allocateDirect(4 * BATCH_SIZE * 224 * 224 * PIXEL_SIZE);
+        byteBuffer.order(ByteOrder.nativeOrder());
+
+        Bitmap resizedBitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, true);
+        int[] intValues = new int[224 * 224];
+        resizedBitmap.getPixels(intValues, 0, resizedBitmap.getWidth(), 0, 0, resizedBitmap.getWidth(), resizedBitmap.getHeight());
+
+        int pixel = 0;
+        for (int i = 0; i < 224; ++i) {
+            for (int j = 0; j < 224; ++j) {
+                final int val = intValues[pixel++];
+                byteBuffer.putFloat(((val >> 16) & 0xFF) - IMAGE_MEAN);
+                byteBuffer.putFloat(((val >> 8) & 0xFF) - IMAGE_MEAN);
+                byteBuffer.putFloat((val & 0xFF) - IMAGE_MEAN);
+            }
+        }
+        return byteBuffer;
+    }
+
 }
